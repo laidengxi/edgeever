@@ -235,12 +235,6 @@ export const readBluesky = (doc: Document, target: PlatformTarget): PlatformRead
   return saved;
 };
 
-const instagramCardHasMedia = (card: Element, base: string) => Array.from(card.querySelectorAll('img[src], video')).some(media => {
-  if (platformElementHidden(media)) return false;
-  const link = media.closest('a[href]');
-  return !link || platformTarget(postLinkUrl(link, base))?.platform === "instagram";
-});
-
 /** Bound Meta posts by their timestamp header and rendered action controls. */
 export const metaPostCard = (link: Element, platform: string, base: string): Element | null => {
   if (!link.querySelector("time[datetime]") || link.closest("[hidden], [aria-hidden='true'], script, style, template")) return null;
@@ -263,10 +257,7 @@ export const metaPostCard = (link: Element, platform: string, base: string): Ele
         return socialPlatform(url.href) === platform && (platform === "threads" ? /^\/@[^/]+\/?$/.test(url.pathname) : /^\/[^/]+\/?$/.test(url.pathname));
       } catch { return false; }
     });
-    // Instagram's detail timestamp lives in the action footer. Keep walking
-    // until the card also contains the media, rather than returning that footer.
-    if (card.matches('article, [role="article"]') || (profile && card.querySelectorAll('button, [role="button"]').length >= 3
-      && (platform !== "instagram" || instagramCardHasMedia(card, base)))) return card;
+    if (card.matches('article, [role="article"]') || (profile && card.querySelectorAll('button, [role="button"]').length >= 3)) return card;
   }
   return null;
 };
@@ -322,18 +313,8 @@ const mediaImages = (item: RecordValue, base: string): string[] | null => {
   }
   return images.filter(Boolean);
 };
-export const instagramPostCard = (doc: Document, target: PlatformTarget): Element | null => {
-  if (target.platform !== "instagram") return null;
-  for (const link of ownPostLinks(doc.documentElement, "instagram")) {
-    if (!sameTarget(postLinkUrl(link, target.url), target)) continue;
-    const card = metaPostCard(link, "instagram", target.url);
-    if (card && !platformElementHidden(card) && instagramCardHasMedia(card, target.url)) return card;
-  }
-  return null;
-};
-
-export const readMetaSocial = (doc: Document, target: PlatformTarget, detail?: Document): PlatformRead => {
-  const media = metaMedia(detail || doc, target);
+export const readMetaSocial = (doc: Document, target: PlatformTarget): PlatformRead => {
+  const media = metaMedia(doc, target);
   if (!media) return { ok: false, reason: "unreadable" };
   const username = text(record(media.user)?.username);
   if (target.platform === "threads" && username && username.toLowerCase() !== target.id.split("/")[0]) return { ok:false, reason:"changed" };
@@ -343,9 +324,7 @@ export const readMetaSocial = (doc: Document, target: PlatformTarget, detail?: D
   if (target.platform === "instagram" && Array.isArray(media.carousel_media)) {
     captions.push(...media.carousel_media.map((slide) => text(record(record(slide)?.caption)?.text)));
   }
-  // A fetched, identity-matched detail supplies the full caption for a visible
-  // feed preview. Do not require that preview to contain the untruncated text.
-  if (detail ? !instagramPostCard(doc, target) : !readableMetaCard(doc,target,captions)) return {ok:false,reason:"unreadable"};
+  if (!readableMetaCard(doc,target,captions)) return {ok:false,reason:"unreadable"};
   const slides = Array.from(new Set(captions.slice(1).filter(Boolean)));
   const combined = slides.join("\n\n");
   const normalized = (value: string) => value.replace(/\s+/g,"");
